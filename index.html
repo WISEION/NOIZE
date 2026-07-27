@@ -425,6 +425,8 @@ function healthColor(h) {
   if (h >= 40) return "var(--warn)";
   return "var(--crit)";
 }
+// impact never reads as "healthy" — a touched node goes warn → crit, never green
+function impactColor(imp) { return imp >= 0.5 ? "var(--crit)" : "var(--warn)"; }
 
 function render() {
   renderEdges();
@@ -498,12 +500,14 @@ function renderNodes() {
     rect.setAttribute("stroke", kind.color);
     rect.setAttribute("stroke-width", 1.5);
 
-    // impact glow
+    // impact glow — source is the epicentre, everything touched glows warn→crit
     const imp = simResult ? (simResult.impact[n.id] || 0) : 0;
-    if (imp > 0.02) {
-      rect.setAttribute("stroke", healthColor(100 - imp * 100));
+    const isSource = simResult && simResult.sourceId === n.id;
+    if (imp > 0.02 || isSource) {
+      const col = isSource ? "var(--crit)" : impactColor(imp);
+      rect.setAttribute("stroke", col);
       rect.setAttribute("stroke-width", 2 + Math.min(imp, 1) * 2.5);
-      rect.style.filter = `drop-shadow(0 0 ${imp * 14}px ${healthColor(100 - imp * 100)})`;
+      rect.style.filter = `drop-shadow(0 0 ${(isSource ? 1 : imp) * 14}px ${col})`;
     }
 
     // zone accent bar
