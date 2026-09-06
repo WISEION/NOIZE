@@ -1,0 +1,1059 @@
+<title>NOIZE — симулятор архитектуры компании</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    color-scheme: dark;
+    --ground: #0f1419;
+    --ground-2: #131a22;
+    --panel: #171f29;
+    --panel-2: #1d2732;
+    --line: #26323f;
+    --line-2: #33424f;
+    --ink: #e6ecf2;
+    --ink-dim: #9fb0bf;
+    --ink-faint: #64798a;
+    --signal: #3dd6c0;
+    --signal-dim: #1f6f66;
+    --warn: #f0b429;
+    --crit: #f2617a;
+    --good: #4fd18b;
+    --internal: #5aa9e6;
+    --external: #f0955a;
+    --radius: 10px;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ground: #eef1f0;
+    --ground-2: #e5e9e8;
+    --panel: #f7f9f8;
+    --panel-2: #eef1f0;
+    --line: #d3dad9;
+    --line-2: #c0c9c8;
+    --ink: #17242c;
+    --ink-dim: #46586a;
+    --ink-faint: #7c8ea0;
+    --signal: #128577;
+    --signal-dim: #9fe0d6;
+    --internal: #2f6bb0;
+    --external: #c76a2f;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans);
+    background: var(--ground);
+    color: var(--ink);
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- top bar ---------- */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 16px;
+    background: linear-gradient(var(--panel), var(--ground-2));
+    border-bottom: 1px solid var(--line);
+    z-index: 20;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand h1 {
+    font-family: var(--mono);
+    font-size: 18px; font-weight: 700; letter-spacing: 2px;
+    color: var(--signal);
+  }
+  .brand .sub {
+    font-size: 11px; color: var(--ink-faint);
+    letter-spacing: .3px;
+  }
+  .spacer { flex: 1; }
+  .tools { display: flex; gap: 8px; flex-wrap: wrap; }
+  button.tool, .filebtn {
+    font-family: var(--sans); font-size: 12.5px;
+    color: var(--ink-dim);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    padding: 7px 12px; border-radius: 8px;
+    cursor: pointer; transition: .12s;
+    display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  button.tool:hover, .filebtn:hover { border-color: var(--line-2); color: var(--ink); background: var(--panel); }
+  button.tool.primary { color: #05201c; background: var(--signal); border-color: var(--signal); font-weight: 600; }
+  button.tool.primary:hover { filter: brightness(1.08); }
+  button.tool.danger:hover { border-color: var(--crit); color: var(--crit); }
+  button.tool:focus-visible, .filebtn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+  input[type=file] { display: none; }
+
+  /* ---------- main layout ---------- */
+  main { display: grid; grid-template-columns: 220px 1fr 300px; min-height: 0; }
+
+  aside {
+    background: var(--ground-2);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    padding: 14px 12px;
+  }
+  aside.right { border-right: none; border-left: 1px solid var(--line); }
+  .rail-title {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--ink-faint);
+    margin: 4px 2px 10px;
+  }
+  .rail-group { margin-bottom: 18px; }
+  .rail-group > .rail-title { display: flex; align-items: center; gap: 7px; }
+  .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+  .palette-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 9px; margin-bottom: 6px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; cursor: grab; transition: .12s;
+    font-size: 13px;
+  }
+  .palette-item:hover { border-color: var(--line-2); transform: translateX(2px); }
+  .palette-item:active { cursor: grabbing; }
+  .palette-item .glyph {
+    width: 26px; height: 26px; border-radius: 6px; flex: none;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+  }
+  .palette-item .pi-name { line-height: 1.15; }
+  .palette-item .pi-name small { display: block; color: var(--ink-faint); font-size: 10.5px; }
+
+  .hint {
+    font-size: 11px; color: var(--ink-faint); line-height: 1.5;
+    background: var(--panel); border: 1px dashed var(--line-2);
+    border-radius: 8px; padding: 9px 10px; margin-top: 6px;
+  }
+  .hint b { color: var(--ink-dim); font-weight: 600; }
+
+  /* ---------- canvas ---------- */
+  .canvas-wrap { position: relative; overflow: hidden; background:
+      radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0 / 26px 26px,
+      var(--ground); }
+  svg#stage { width: 100%; height: 100%; display: block; cursor: grab; }
+  svg#stage.panning { cursor: grabbing; }
+  svg#stage.linking { cursor: crosshair; }
+
+  .node-rect { rx: 9; }
+  .node-label { font-family: var(--sans); font-size: 12.5px; font-weight: 600; fill: var(--ink); pointer-events: none; }
+  .node-kind { font-family: var(--mono); font-size: 9px; letter-spacing: .8px; text-transform: uppercase; pointer-events: none; }
+  .node-metric { font-family: var(--mono); font-size: 9.5px; pointer-events: none; }
+  .port { fill: var(--panel); stroke: var(--signal); stroke-width: 1.5; cursor: crosshair; opacity: 0; transition: opacity .1s; }
+  .node-g:hover .port { opacity: 1; }
+  .edge-path { fill: none; stroke: var(--line-2); stroke-width: 2; transition: stroke .12s; }
+  .edge-hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; }
+  .edge-label { font-family: var(--mono); font-size: 9px; fill: var(--ink-faint); pointer-events: none; }
+  .selected .node-rect, .selected-edge .edge-path { stroke: var(--signal) !important; stroke-width: 2.5; }
+
+  .float-legend {
+    position: absolute; left: 12px; bottom: 12px;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 11px; font-size: 10.5px; color: var(--ink-dim);
+    display: flex; gap: 14px; font-family: var(--mono);
+  }
+  .float-legend span { display: flex; align-items: center; gap: 5px; }
+  .zoombar {
+    position: absolute; right: 12px; bottom: 12px; display: flex; gap: 6px;
+  }
+  .zoombar button {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: color-mix(in srgb, var(--panel) 90%, transparent);
+    border: 1px solid var(--line); color: var(--ink-dim);
+    font-family: var(--mono); font-size: 15px; cursor: pointer;
+  }
+  .zoombar button:hover { color: var(--ink); border-color: var(--line-2); }
+
+  /* ---------- inspector ---------- */
+  .insp-empty { color: var(--ink-faint); font-size: 12.5px; line-height: 1.6; padding: 6px 2px; }
+  .field { margin-bottom: 13px; }
+  .field label {
+    display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--ink-faint); margin-bottom: 5px;
+  }
+  .field input[type=text], .field select {
+    width: 100%; font-family: var(--sans); font-size: 13px;
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--signal); }
+  .field .rowval { display: flex; align-items: center; gap: 9px; }
+  .field input[type=range] { flex: 1; accent-color: var(--signal); }
+  .field .num { font-family: var(--mono); font-size: 12px; color: var(--ink); width: 34px; text-align: right; }
+
+  .sim-box { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 14px; }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 12px; }
+  .metric {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 10px;
+  }
+  .metric .mv { font-family: var(--mono); font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .metric .ml { font-size: 10px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .8px; margin-top: 2px; }
+  .metric.internal .mv { color: var(--internal); }
+  .metric.external .mv { color: var(--external); }
+
+  .impact-list { list-style: none; }
+  .impact-list li {
+    display: flex; align-items: center; gap: 8px; padding: 5px 0;
+    font-size: 12px; border-bottom: 1px solid var(--line);
+  }
+  .impact-list li .bar { height: 6px; border-radius: 3px; flex: none; }
+  .impact-list li .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .impact-list li .pc { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
+  .tag { font-family: var(--mono); font-size: 8.5px; padding: 1px 4px; border-radius: 3px; letter-spacing: .5px; }
+  .tag.int { background: color-mix(in srgb, var(--internal) 22%, transparent); color: var(--internal); }
+  .tag.ext { background: color-mix(in srgb, var(--external) 22%, transparent); color: var(--external); }
+
+  footer {
+    display: flex; align-items: center; gap: 14px;
+    padding: 6px 16px; font-family: var(--mono); font-size: 11px;
+    color: var(--ink-faint); background: var(--ground-2);
+    border-top: 1px solid var(--line);
+  }
+  footer .ok { color: var(--good); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header>
+  <div class="brand">
+    <h1>NOIZE</h1>
+    <span class="sub">моделирование архитектуры · симулятор ряби</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="tools">
+    <button class="tool primary" id="btn-sim">▸ Симулировать шок</button>
+    <button class="tool" id="btn-clear-sim">Сбросить импакт</button>
+    <button class="tool" id="btn-theme">◐ Тема</button>
+    <button class="tool" id="btn-export">↓ JSON</button>
+    <label class="filebtn" for="import-file">↑ Импорт</label>
+    <input type="file" id="import-file" accept="application/json" />
+    <button class="tool danger" id="btn-clear">Очистить</button>
+  </div>
+</header>
+
+<main>
+  <!-- ---------- palette ---------- -->
+  <aside class="left">
+    <div class="rail-group">
+      <div class="rail-title"><span class="dot" style="background:var(--internal)"></span>Внутри компании</div>
+      <div id="pal-internal"></div>
+    </div>
+    <div class="rail-group">
+      <div class="rail-title"><span class="dot" style="background:var(--external)"></span>Внешний мир</div>
+      <div id="pal-external"></div>
+    </div>
+    <div class="hint">
+      <b>Как играть:</b><br>
+      • Перетащи блок на холст<br>
+      • Наведи на блок → потяни за точку к другому, чтобы связать<br>
+      • Клик — выбрать и настроить<br>
+      • Выбери узел и жми <b>Симулировать</b>, чтобы увидеть рябь
+    </div>
+  </aside>
+
+  <!-- ---------- canvas ---------- -->
+  <div class="canvas-wrap">
+    <svg id="stage">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--line-2)"></path>
+        </marker>
+        <marker id="arrow-live" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--crit)"></path>
+        </marker>
+      </defs>
+      <g id="viewport">
+        <g id="edges-layer"></g>
+        <g id="nodes-layer"></g>
+        <path id="linking-preview" class="edge-path" style="stroke:var(--signal);stroke-dasharray:5 4;display:none"></path>
+      </g>
+    </svg>
+    <div class="float-legend">
+      <span><span class="dot" style="background:var(--good)"></span>здоров</span>
+      <span><span class="dot" style="background:var(--warn)"></span>под ударом</span>
+      <span><span class="dot" style="background:var(--crit)"></span>критично</span>
+    </div>
+    <div class="zoombar">
+      <button id="zoom-out">−</button>
+      <button id="zoom-fit">⊡</button>
+      <button id="zoom-in">+</button>
+    </div>
+  </div>
+
+  <!-- ---------- inspector ---------- -->
+  <aside class="right">
+    <div class="rail-title">Инспектор</div>
+    <div id="inspector"></div>
+  </aside>
+</main>
+
+<footer>
+  <span id="stat-nodes">0 узлов</span>
+  <span id="stat-edges">0 связей</span>
+  <span class="spacer" style="flex:1"></span>
+  <span id="stat-save" class="ok">● сохранено локально</span>
+</footer>
+
+<script>
+"use strict";
+// ============================================================
+//  NOIZE — enterprise architecture ripple simulator
+//  Single-file prototype. Vanilla JS + SVG.
+// ============================================================
+
+const SVGNS = "http://www.w3.org/2000/svg";
+
+// ---- node kind catalogue -----------------------------------
+// impact = how strongly a shock passing THROUGH this node is felt / re-amplified
+const KINDS = {
+  dept:      { label: "Департамент",  short: "DEP", zone: "internal", color: "var(--internal)", abbr: "Д" },
+  role:      { label: "Роль / человек", short: "ROLE", zone: "internal", color: "#8fb8de", abbr: "Р" },
+  process:   { label: "Процесс",      short: "PROC", zone: "internal", color: "#6fb1c9", abbr: "П" },
+  system:    { label: "IT-система",    short: "SYS", zone: "internal", color: "#7d8fe0", abbr: "S" },
+  data:      { label: "Данные / ресурс", short: "DATA", zone: "internal", color: "#9d7de0", abbr: "Δ" },
+  customer:  { label: "Клиент",        short: "CUST", zone: "external", color: "var(--external)", abbr: "К" },
+  supplier:  { label: "Поставщик",     short: "SUPP", zone: "external", color: "#e0a95a", abbr: "П" },
+  regulator: { label: "Регулятор",     short: "REG", zone: "external", color: "#e07d7d", abbr: "§" },
+  partner:   { label: "Партнёр",       short: "PART", zone: "external", color: "#d99a6c", abbr: "◆" },
+  market:    { label: "Рынок",         short: "MKT", zone: "external", color: "#e0c15a", abbr: "M" },
+};
+
+const EDGE_KINDS = {
+  dependency: { label: "Зависимость", factor: 0.92 },
+  data:       { label: "Поток данных", factor: 0.65 },
+  control:    { label: "Контроль / приказ", factor: 0.82 },
+  money:      { label: "Деньги", factor: 0.72 },
+  influence:  { label: "Влияние", factor: 0.45 },
+};
+
+const NODE_W = 150, NODE_H = 58;
+
+// ---- state --------------------------------------------------
+let state = { nodes: [], edges: [] };
+let view = { x: 0, y: 0, k: 1 };
+let selected = null;      // {type:'node'|'edge', id}
+let simResult = null;
+let uid = 1;
+const nextId = (p) => `${p}${uid++}`;
+
+// ---- element refs ------------------------------------------
+const stage = document.getElementById("stage");
+const viewportG = document.getElementById("viewport");
+const nodesLayer = document.getElementById("nodes-layer");
+const edgesLayer = document.getElementById("edges-layer");
+const linkPreview = document.getElementById("linking-preview");
+const inspector = document.getElementById("inspector");
+
+// ============================================================
+//  Seed model — so the canvas is never empty
+// ============================================================
+function seed() {
+  const N = (kind, label, x, y, extra = {}) => ({
+    id: nextId("n"), kind, label, x, y,
+    health: 100, criticality: extra.crit ?? 3, capacity: extra.cap ?? 3,
+  });
+  const nodes = [
+    N("customer", "Клиенты", 40, 60, { crit: 5 }),
+    N("system", "Платёжный шлюз", 320, 60, { crit: 5, cap: 2 }),
+    N("process", "Оформление заказа", 320, 200, { crit: 4 }),
+    N("dept", "Операции", 600, 130, { crit: 4 }),
+    N("system", "Биллинг", 600, 280, { crit: 4 }),
+    N("supplier", "Банк-эквайер", 40, 200, { crit: 4 }),
+    N("regulator", "ЦБ / регулятор", 600, 400, { crit: 5 }),
+    N("data", "База клиентов", 880, 200, { crit: 4 }),
+  ];
+  const byLabel = (l) => nodes.find(n => n.label === l).id;
+  const E = (a, b, kind, w) => ({ id: nextId("e"), from: byLabel(a), to: byLabel(b), kind, weight: w });
+  const edges = [
+    E("Клиенты", "Платёжный шлюз", "data", 5),
+    E("Банк-эквайер", "Платёжный шлюз", "dependency", 5),
+    E("Платёжный шлюз", "Оформление заказа", "dependency", 4),
+    E("Оформление заказа", "Операции", "dependency", 3),
+    E("Оформление заказа", "Биллинг", "data", 4),
+    E("Биллинг", "База клиентов", "data", 3),
+    E("Операции", "База клиентов", "data", 3),
+    E("Биллинг", "ЦБ / регулятор", "control", 2),
+  ];
+  state = { nodes, edges };
+}
+
+// ============================================================
+//  Persistence
+// ============================================================
+const STORE_KEY = "noize.model.v1";
+function save() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ state, view, uid }));
+    flashSaved();
+  } catch (e) { /* storage may be blocked */ }
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    state = d.state; view = d.view || view; uid = d.uid || 1;
+    return true;
+  } catch (e) { return false; }
+}
+let saveTimer = null;
+function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); }
+function flashSaved() {
+  const el = document.getElementById("stat-save");
+  el.textContent = "● сохранено локально"; el.classList.add("ok");
+}
+
+// ============================================================
+//  Rendering
+// ============================================================
+function applyView() {
+  viewportG.setAttribute("transform", `translate(${view.x} ${view.y}) scale(${view.k})`);
+}
+
+function nodeById(id) { return state.nodes.find(n => n.id === id); }
+
+function healthColor(h) {
+  if (h >= 70) return "var(--good)";
+  if (h >= 40) return "var(--warn)";
+  return "var(--crit)";
+}
+// impact never reads as "healthy" — a touched node goes warn → crit, never green
+function impactColor(imp) { return imp >= 0.5 ? "var(--crit)" : "var(--warn)"; }
+
+function render() {
+  renderEdges();
+  renderNodes();
+  document.getElementById("stat-nodes").textContent = state.nodes.length + " узлов";
+  document.getElementById("stat-edges").textContent = state.edges.length + " связей";
+}
+
+function edgeEndpoints(e) {
+  const a = nodeById(e.from), b = nodeById(e.to);
+  if (!a || !b) return null;
+  const ax = a.x + NODE_W / 2, ay = a.y + NODE_H / 2;
+  const bx = b.x + NODE_W / 2, by = b.y + NODE_H / 2;
+  return { ax, ay, bx, by };
+}
+
+function renderEdges() {
+  edgesLayer.textContent = "";
+  for (const e of state.edges) {
+    const p = edgeEndpoints(e);
+    if (!p) continue;
+    const midx = (p.ax + p.bx) / 2, midy = (p.ay + p.by) / 2;
+    const dx = (p.bx - p.ax) * 0.3;
+    const d = `M ${p.ax} ${p.ay} C ${p.ax + dx} ${p.ay}, ${p.bx - dx} ${p.by}, ${p.bx} ${p.by}`;
+
+    const g = document.createElementNS(SVGNS, "g");
+    if (selected && selected.type === "edge" && selected.id === e.id) g.setAttribute("class", "selected-edge");
+
+    const hit = document.createElementNS(SVGNS, "path");
+    hit.setAttribute("class", "edge-hit"); hit.setAttribute("d", d);
+    hit.addEventListener("mousedown", (ev) => { ev.stopPropagation(); select("edge", e.id); });
+
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("class", "edge-path"); path.setAttribute("d", d);
+    path.setAttribute("marker-end", "url(#arrow)");
+
+    // live impact colouring
+    if (simResult && simResult.edgeFlux[e.id]) {
+      const f = simResult.edgeFlux[e.id];
+      path.style.stroke = f > 0.5 ? "var(--crit)" : f > 0.2 ? "var(--warn)" : "var(--line-2)";
+      path.style.strokeWidth = 2 + f * 3;
+      path.setAttribute("marker-end", "url(#arrow-live)");
+    }
+
+    const lbl = document.createElementNS(SVGNS, "text");
+    lbl.setAttribute("class", "edge-label");
+    lbl.setAttribute("x", midx); lbl.setAttribute("y", midy - 5);
+    lbl.setAttribute("text-anchor", "middle");
+    lbl.textContent = EDGE_KINDS[e.kind].label + " ·" + e.weight;
+
+    g.append(path, hit, lbl);
+    edgesLayer.appendChild(g);
+  }
+}
+
+function renderNodes() {
+  nodesLayer.textContent = "";
+  for (const n of state.nodes) {
+    const kind = KINDS[n.kind];
+    const g = document.createElementNS(SVGNS, "g");
+    g.setAttribute("class", "node-g" +
+      (selected && selected.type === "node" && selected.id === n.id ? " selected" : ""));
+    g.setAttribute("transform", `translate(${n.x} ${n.y})`);
+    g.dataset.id = n.id;
+
+    const rect = document.createElementNS(SVGNS, "rect");
+    rect.setAttribute("class", "node-rect");
+    rect.setAttribute("width", NODE_W); rect.setAttribute("height", NODE_H);
+    rect.setAttribute("rx", 9);
+    rect.setAttribute("fill", "var(--panel)");
+    rect.setAttribute("stroke", kind.color);
+    rect.setAttribute("stroke-width", 1.5);
+
+    // impact glow — source is the epicentre, everything touched glows warn→crit
+    const imp = simResult ? (simResult.impact[n.id] || 0) : 0;
+    const isSource = simResult && simResult.sourceId === n.id;
+    if (imp > 0.02 || isSource) {
+      const col = isSource ? "var(--crit)" : impactColor(imp);
+      rect.setAttribute("stroke", col);
+      rect.setAttribute("stroke-width", 2 + Math.min(imp, 1) * 2.5);
+      rect.style.filter = `drop-shadow(0 0 ${(isSource ? 1 : imp) * 14}px ${col})`;
+    }
+
+    // zone accent bar
+    const bar = document.createElementNS(SVGNS, "rect");
+    bar.setAttribute("x", 0); bar.setAttribute("y", 0);
+    bar.setAttribute("width", 4); bar.setAttribute("height", NODE_H);
+    bar.setAttribute("fill", kind.color);
+    bar.setAttribute("rx", 2);
+
+    const kindT = document.createElementNS(SVGNS, "text");
+    kindT.setAttribute("class", "node-kind");
+    kindT.setAttribute("x", 14); kindT.setAttribute("y", 17);
+    kindT.setAttribute("fill", kind.color);
+    kindT.textContent = kind.short;
+
+    const lblT = document.createElementNS(SVGNS, "text");
+    lblT.setAttribute("class", "node-label");
+    lblT.setAttribute("x", 14); lblT.setAttribute("y", 35);
+    lblT.textContent = n.label.length > 18 ? n.label.slice(0, 17) + "…" : n.label;
+
+    const metricT = document.createElementNS(SVGNS, "text");
+    metricT.setAttribute("class", "node-metric");
+    metricT.setAttribute("x", 14); metricT.setAttribute("y", 50);
+    metricT.setAttribute("fill", healthColor(n.health));
+    metricT.textContent = `♥ ${Math.round(n.health)}  ⚠ ${n.criticality}`;
+
+    // port for linking (right + bottom center)
+    const port = document.createElementNS(SVGNS, "circle");
+    port.setAttribute("class", "port");
+    port.setAttribute("cx", NODE_W); port.setAttribute("cy", NODE_H / 2);
+    port.setAttribute("r", 6);
+    port.addEventListener("mousedown", (ev) => startLink(ev, n));
+
+    g.append(rect, bar, kindT, lblT, metricT, port);
+    g.addEventListener("mousedown", (ev) => startNodeDrag(ev, n));
+    nodesLayer.appendChild(g);
+  }
+}
+
+// ============================================================
+//  Coordinate helpers
+// ============================================================
+function screenToWorld(clientX, clientY) {
+  const r = stage.getBoundingClientRect();
+  return {
+    x: (clientX - r.left - view.x) / view.k,
+    y: (clientY - r.top - view.y) / view.k,
+  };
+}
+
+// ============================================================
+//  Palette drag → create node
+// ============================================================
+function buildPalette() {
+  const mk = (containerId, zone) => {
+    const el = document.getElementById(containerId);
+    for (const [key, k] of Object.entries(KINDS)) {
+      if (k.zone !== zone) continue;
+      const item = document.createElement("div");
+      item.className = "palette-item";
+      item.draggable = true;
+      item.innerHTML =
+        `<span class="glyph" style="background:color-mix(in srgb, ${k.color} 20%, transparent);color:${k.color}">${k.abbr}</span>` +
+        `<span class="pi-name">${k.label}<small>${k.short}</small></span>`;
+      item.addEventListener("dragstart", (ev) => {
+        ev.dataTransfer.setData("text/noize-kind", key);
+        ev.dataTransfer.effectAllowed = "copy";
+      });
+      el.appendChild(item);
+    }
+  };
+  mk("pal-internal", "internal");
+  mk("pal-external", "external");
+}
+
+stage.addEventListener("dragover", (ev) => { ev.preventDefault(); ev.dataTransfer.dropEffect = "copy"; });
+stage.addEventListener("drop", (ev) => {
+  ev.preventDefault();
+  const kind = ev.dataTransfer.getData("text/noize-kind");
+  if (!kind || !KINDS[kind]) return;
+  const w = screenToWorld(ev.clientX, ev.clientY);
+  const n = {
+    id: nextId("n"), kind, label: KINDS[kind].label,
+    x: w.x - NODE_W / 2, y: w.y - NODE_H / 2,
+    health: 100, criticality: 3, capacity: 3,
+  };
+  state.nodes.push(n);
+  select("node", n.id);
+  render(); scheduleSave();
+});
+
+// ============================================================
+//  Node dragging
+// ============================================================
+let drag = null;
+function startNodeDrag(ev, n) {
+  if (ev.button !== 0) return;
+  ev.stopPropagation();
+  select("node", n.id);
+  const w = screenToWorld(ev.clientX, ev.clientY);
+  drag = { id: n.id, dx: w.x - n.x, dy: w.y - n.y, moved: false };
+  window.addEventListener("mousemove", onNodeDragMove);
+  window.addEventListener("mouseup", endNodeDrag);
+}
+function onNodeDragMove(ev) {
+  if (!drag) return;
+  const w = screenToWorld(ev.clientX, ev.clientY);
+  const n = nodeById(drag.id);
+  n.x = w.x - drag.dx; n.y = w.y - drag.dy;
+  drag.moved = true;
+  render();
+}
+function endNodeDrag() {
+  window.removeEventListener("mousemove", onNodeDragMove);
+  window.removeEventListener("mouseup", endNodeDrag);
+  if (drag && drag.moved) scheduleSave();
+  drag = null;
+}
+
+// ============================================================
+//  Linking (create edges)
+// ============================================================
+let linking = null;
+function startLink(ev, n) {
+  ev.stopPropagation();
+  const start = { x: n.x + NODE_W, y: n.y + NODE_H / 2 };
+  linking = { from: n.id, start };
+  stage.classList.add("linking");
+  linkPreview.style.display = "";
+  window.addEventListener("mousemove", onLinkMove);
+  window.addEventListener("mouseup", endLink);
+}
+function onLinkMove(ev) {
+  if (!linking) return;
+  const w = screenToWorld(ev.clientX, ev.clientY);
+  linkPreview.setAttribute("d", `M ${linking.start.x} ${linking.start.y} L ${w.x} ${w.y}`);
+}
+function endLink(ev) {
+  window.removeEventListener("mousemove", onLinkMove);
+  window.removeEventListener("mouseup", endLink);
+  stage.classList.remove("linking");
+  linkPreview.style.display = "none";
+  if (!linking) return;
+  // find target node under cursor
+  const w = screenToWorld(ev.clientX, ev.clientY);
+  const target = state.nodes.find(n =>
+    w.x >= n.x && w.x <= n.x + NODE_W && w.y >= n.y && w.y <= n.y + NODE_H && n.id !== linking.from);
+  if (target) {
+    const exists = state.edges.some(e => e.from === linking.from && e.to === target.id);
+    if (!exists) {
+      const e = { id: nextId("e"), from: linking.from, to: target.id, kind: "dependency", weight: 3 };
+      state.edges.push(e);
+      select("edge", e.id);
+      scheduleSave();
+    }
+  }
+  linking = null;
+  render();
+}
+
+// ============================================================
+//  Pan & zoom
+// ============================================================
+let pan = null;
+stage.addEventListener("mousedown", (ev) => {
+  if (ev.button !== 0) return;
+  // clicked empty background
+  select(null);
+  pan = { sx: ev.clientX, sy: ev.clientY, ox: view.x, oy: view.y };
+  stage.classList.add("panning");
+  window.addEventListener("mousemove", onPanMove);
+  window.addEventListener("mouseup", endPan);
+});
+function onPanMove(ev) {
+  if (!pan) return;
+  view.x = pan.ox + (ev.clientX - pan.sx);
+  view.y = pan.oy + (ev.clientY - pan.sy);
+  applyView();
+}
+function endPan() {
+  window.removeEventListener("mousemove", onPanMove);
+  window.removeEventListener("mouseup", endPan);
+  stage.classList.remove("panning");
+  if (pan) scheduleSave();
+  pan = null;
+}
+stage.addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const r = stage.getBoundingClientRect();
+  const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const nk = Math.min(2.5, Math.max(0.3, view.k * factor));
+  // zoom toward cursor
+  view.x = mx - (mx - view.x) * (nk / view.k);
+  view.y = my - (my - view.y) * (nk / view.k);
+  view.k = nk;
+  applyView(); scheduleSave();
+}, { passive: false });
+
+document.getElementById("zoom-in").onclick = () => zoomBy(1.2);
+document.getElementById("zoom-out").onclick = () => zoomBy(1 / 1.2);
+document.getElementById("zoom-fit").onclick = fitView;
+function zoomBy(f) {
+  const r = stage.getBoundingClientRect();
+  const mx = r.width / 2, my = r.height / 2;
+  const nk = Math.min(2.5, Math.max(0.3, view.k * f));
+  view.x = mx - (mx - view.x) * (nk / view.k);
+  view.y = my - (my - view.y) * (nk / view.k);
+  view.k = nk; applyView(); scheduleSave();
+}
+function fitView() {
+  if (!state.nodes.length) { view = { x: 40, y: 40, k: 1 }; applyView(); return; }
+  const xs = state.nodes.map(n => n.x), ys = state.nodes.map(n => n.y);
+  const minx = Math.min(...xs), miny = Math.min(...ys);
+  const maxx = Math.max(...xs) + NODE_W, maxy = Math.max(...ys) + NODE_H;
+  const r = stage.getBoundingClientRect();
+  const pad = 60;
+  const k = Math.min((r.width - pad * 2) / (maxx - minx), (r.height - pad * 2) / (maxy - miny), 1.5);
+  view.k = Math.max(0.3, k);
+  view.x = pad - minx * view.k + (r.width - pad * 2 - (maxx - minx) * view.k) / 2;
+  view.y = pad - miny * view.k + (r.height - pad * 2 - (maxy - miny) * view.k) / 2;
+  applyView(); scheduleSave();
+}
+
+// ============================================================
+//  Selection + inspector
+// ============================================================
+function select(type, id) {
+  selected = type ? { type, id } : null;
+  render();
+  renderInspector();
+}
+
+function renderInspector() {
+  inspector.textContent = "";
+  if (!selected) {
+    const d = document.createElement("div");
+    d.className = "insp-empty";
+    d.innerHTML = "Ничего не выбрано.<br><br>Выбери узел, чтобы задать его здоровье и критичность, или связь, чтобы настроить силу влияния.<br><br>Затем запусти <b style='color:var(--signal)'>Симуляцию шока</b>, чтобы увидеть, как удар расходится по системе.";
+    inspector.appendChild(d);
+    if (simResult) renderSimSummary();
+    return;
+  }
+  if (selected.type === "node") renderNodeInspector(nodeById(selected.id));
+  else renderEdgeInspector(state.edges.find(e => e.id === selected.id));
+}
+
+function field(label, control) {
+  const f = document.createElement("div"); f.className = "field";
+  const l = document.createElement("label"); l.textContent = label;
+  f.append(l, control); return f;
+}
+function textInput(val, on) {
+  const i = document.createElement("input"); i.type = "text"; i.value = val;
+  i.addEventListener("input", () => on(i.value)); return i;
+}
+function selectInput(options, val, on) {
+  const s = document.createElement("select");
+  for (const [k, label] of options) {
+    const o = document.createElement("option"); o.value = k; o.textContent = label;
+    if (k === val) o.selected = true; s.appendChild(o);
+  }
+  s.addEventListener("change", () => on(s.value)); return s;
+}
+function rangeInput(val, min, max, on) {
+  const wrap = document.createElement("div"); wrap.className = "rowval";
+  const r = document.createElement("input"); r.type = "range";
+  r.min = min; r.max = max; r.value = val;
+  const num = document.createElement("span"); num.className = "num"; num.textContent = val;
+  r.addEventListener("input", () => { num.textContent = r.value; on(+r.value); });
+  wrap.append(r, num); return wrap;
+}
+
+function renderNodeInspector(n) {
+  if (!n) return;
+  const k = KINDS[n.kind];
+  const head = document.createElement("div"); head.className = "rail-title";
+  head.style.color = k.color; head.textContent = k.label + " · " + (k.zone === "internal" ? "внутренний" : "внешний");
+  inspector.appendChild(head);
+
+  inspector.appendChild(field("Название", textInput(n.label, v => { n.label = v; render(); scheduleSave(); })));
+  inspector.appendChild(field("Тип узла", selectInput(
+    Object.entries(KINDS).map(([key, kk]) => [key, kk.label]), n.kind,
+    v => { n.kind = v; renderInspector(); render(); scheduleSave(); })));
+  inspector.appendChild(field("Здоровье (0–100)", rangeInput(n.health, 0, 100,
+    v => { n.health = v; render(); scheduleSave(); })));
+  inspector.appendChild(field("Критичность (1–5) — насколько усиливает удар", rangeInput(n.criticality, 1, 5,
+    v => { n.criticality = v; scheduleSave(); })));
+  inspector.appendChild(field("Запас прочности (1–5) — гасит удар", rangeInput(n.capacity, 1, 5,
+    v => { n.capacity = v; scheduleSave(); })));
+
+  const del = document.createElement("button");
+  del.className = "tool danger"; del.style.width = "100%"; del.style.marginTop = "4px";
+  del.textContent = "Удалить узел";
+  del.onclick = () => {
+    state.edges = state.edges.filter(e => e.from !== n.id && e.to !== n.id);
+    state.nodes = state.nodes.filter(x => x.id !== n.id);
+    clearSim(); select(null); render(); scheduleSave();
+  };
+  inspector.appendChild(del);
+
+  const sim = document.createElement("button");
+  sim.className = "tool primary"; sim.style.width = "100%"; sim.style.marginTop = "8px";
+  sim.textContent = "▸ Ударить по этому узлу";
+  sim.onclick = () => runSim(n.id);
+  inspector.appendChild(sim);
+
+  if (simResult) renderSimSummary();
+}
+
+function renderEdgeInspector(e) {
+  if (!e) return;
+  const a = nodeById(e.from), b = nodeById(e.to);
+  const head = document.createElement("div"); head.className = "rail-title";
+  head.textContent = "Связь";
+  inspector.appendChild(head);
+  const desc = document.createElement("div"); desc.className = "insp-empty";
+  desc.innerHTML = `<b style="color:var(--ink)">${a ? a.label : "?"}</b> → <b style="color:var(--ink)">${b ? b.label : "?"}</b>`;
+  desc.style.marginBottom = "12px";
+  inspector.appendChild(desc);
+
+  inspector.appendChild(field("Тип связи", selectInput(
+    Object.entries(EDGE_KINDS).map(([k, v]) => [k, v.label]), e.kind,
+    v => { e.kind = v; render(); scheduleSave(); })));
+  inspector.appendChild(field("Сила влияния (1–5)", rangeInput(e.weight, 1, 5,
+    v => { e.weight = v; render(); scheduleSave(); })));
+
+  const swap = document.createElement("button");
+  swap.className = "tool"; swap.style.width = "100%"; swap.style.marginBottom = "6px";
+  swap.textContent = "⇄ Развернуть направление";
+  swap.onclick = () => { [e.from, e.to] = [e.to, e.from]; render(); scheduleSave(); };
+  inspector.appendChild(swap);
+
+  const del = document.createElement("button");
+  del.className = "tool danger"; del.style.width = "100%";
+  del.textContent = "Удалить связь";
+  del.onclick = () => {
+    state.edges = state.edges.filter(x => x.id !== e.id);
+    clearSim(); select(null); render(); scheduleSave();
+  };
+  inspector.appendChild(del);
+}
+
+// ============================================================
+//  Simulation — the ripple engine
+// ============================================================
+// A shock is injected at a source node. It propagates along outgoing
+// AND incoming edges (a broken node hurts both those it feeds and,
+// weaker, those that feed it). Each hop the pulse is multiplied by:
+//   edge factor × (weight/5) × source criticality boost × decay
+// and reduced by the receiver's capacity (shock absorption).
+function computeRipple(sourceId, magnitude = 1) {
+  const impact = {};          // nodeId -> 0..~1
+  const edgeFlux = {};        // edgeId -> flux carried
+  impact[sourceId] = magnitude;
+
+  // adjacency: for each node, edges out (forward) and in (backward, weaker)
+  const out = {}, inc = {};
+  for (const e of state.edges) {
+    (out[e.from] ||= []).push(e);
+    (inc[e.to] ||= []).push(e);
+  }
+
+  const DECAY = 0.78;
+  const BACK = 0.5;           // reverse propagation is half strength
+  const THRESH = 0.03;
+
+  // priority-ish BFS by pulse strength
+  const queue = [{ id: sourceId, pulse: magnitude }];
+  let guard = 0;
+  while (queue.length && guard++ < 5000) {
+    queue.sort((a, b) => b.pulse - a.pulse);
+    const { id, pulse } = queue.shift();
+    if (pulse < THRESH) continue;
+
+    const spread = (edge, neighborId, dirFactor) => {
+      const src = nodeById(id), nb = nodeById(neighborId);
+      if (!nb) return;
+      const critBoost = 0.7 + (src.criticality / 5) * 0.6;      // 0.7..1.3
+      const absorb = 1 - (nb.capacity / 5) * 0.5;               // 1..0.5
+      let next = pulse * EDGE_KINDS[edge.kind].factor * (edge.weight / 5)
+        * critBoost * absorb * DECAY * dirFactor;
+      if (next < THRESH) return;
+      edgeFlux[edge.id] = Math.max(edgeFlux[edge.id] || 0, next / magnitude);
+      const prev = impact[neighborId] || 0;
+      if (next > prev) {
+        impact[neighborId] = next;
+        queue.push({ id: neighborId, pulse: next });
+      }
+    };
+
+    for (const e of (out[id] || [])) spread(e, e.to, 1);
+    for (const e of (inc[id] || [])) spread(e, e.from, BACK);
+  }
+
+  // normalise impact to 0..1
+  for (const k in impact) impact[k] = Math.min(1, impact[k]);
+  return { impact, edgeFlux, sourceId, magnitude };
+}
+
+function runSim(sourceId) {
+  simResult = computeRipple(sourceId, 1);
+  render();
+  renderInspector();
+}
+function clearSim() { simResult = null; }
+
+function renderSimSummary() {
+  const box = document.createElement("div"); box.className = "sim-box";
+  const src = nodeById(simResult.sourceId);
+  const title = document.createElement("div"); title.className = "rail-title";
+  title.textContent = "Рябь от: " + (src ? src.label : "?");
+  box.appendChild(title);
+
+  // aggregate internal vs external blast radius
+  let internal = 0, external = 0, hitInt = 0, hitExt = 0;
+  const rows = [];
+  for (const n of state.nodes) {
+    const v = simResult.impact[n.id] || 0;
+    if (n.id === simResult.sourceId) continue;
+    if (v < 0.02) continue;
+    const zone = KINDS[n.kind].zone;
+    if (zone === "internal") { internal += v; hitInt++; }
+    else { external += v; hitExt++; }
+    rows.push({ n, v, zone });
+  }
+  rows.sort((a, b) => b.v - a.v);
+
+  const metrics = document.createElement("div"); metrics.className = "metrics";
+  const mk = (cls, val, lbl) => {
+    const m = document.createElement("div"); m.className = "metric " + cls;
+    m.innerHTML = `<div class="mv">${val}</div><div class="ml">${lbl}</div>`;
+    return m;
+  };
+  metrics.append(
+    mk("internal", hitInt, "внутри задето"),
+    mk("external", hitExt, "снаружи задето"),
+    mk("internal", Math.round(internal * 100), "внутр. импакт"),
+    mk("external", Math.round(external * 100), "внешн. импакт"),
+  );
+  box.appendChild(metrics);
+
+  if (hitExt > 0) {
+    const warn = document.createElement("div"); warn.className = "insp-empty";
+    warn.style.color = "var(--external)"; warn.style.marginBottom = "10px";
+    warn.innerHTML = `⚠ Локальное действие выходит наружу: задето <b>${hitExt}</b> внешних участника(ов). Это уже не внутренний вопрос.`;
+    box.appendChild(warn);
+  }
+
+  const list = document.createElement("ul"); list.className = "impact-list";
+  for (const r of rows.slice(0, 10)) {
+    const li = document.createElement("li");
+    const bar = document.createElement("span"); bar.className = "bar";
+    bar.style.width = (6 + r.v * 60) + "px";
+    bar.style.background = r.zone === "internal" ? "var(--internal)" : "var(--external)";
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = r.n.label;
+    const tag = document.createElement("span"); tag.className = "tag " + (r.zone === "internal" ? "int" : "ext");
+    tag.textContent = r.zone === "internal" ? "ВНУТР" : "ВНЕШ";
+    const pc = document.createElement("span"); pc.className = "pc"; pc.textContent = Math.round(r.v * 100) + "%";
+    li.append(bar, nm, tag, pc);
+    li.style.cursor = "pointer";
+    li.onclick = () => select("node", r.n.id);
+    list.appendChild(li);
+  }
+  if (!rows.length) {
+    const none = document.createElement("div"); none.className = "insp-empty";
+    none.textContent = "Изолированный узел — рябь никуда не пошла. Добавь связи.";
+    box.appendChild(none);
+  }
+  box.appendChild(list);
+  inspector.appendChild(box);
+}
+
+// ============================================================
+//  Toolbar actions
+// ============================================================
+document.getElementById("btn-sim").onclick = () => {
+  if (selected && selected.type === "node") runSim(selected.id);
+  else if (state.nodes.length) {
+    // default: hit the most critical node
+    const src = [...state.nodes].sort((a, b) => b.criticality - a.criticality)[0];
+    select("node", src.id); runSim(src.id);
+  }
+};
+document.getElementById("btn-clear-sim").onclick = () => { clearSim(); render(); renderInspector(); };
+document.getElementById("btn-theme").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "light" ? "dark" : (cur === "dark" ? "light" : "light");
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("noize.theme", next); } catch (e) {}
+};
+document.getElementById("btn-export").onclick = () => {
+  const blob = new Blob([JSON.stringify({ state }, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "noize-model.json"; a.click();
+  URL.revokeObjectURL(url);
+};
+document.getElementById("import-file").addEventListener("change", (ev) => {
+  const file = ev.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const d = JSON.parse(reader.result);
+      if (d.state && Array.isArray(d.state.nodes)) {
+        state = d.state;
+        uid = 1 + Math.max(0, ...state.nodes.concat(state.edges).map(o => +String(o.id).replace(/\D/g, "") || 0));
+        clearSim(); select(null); render(); fitView(); scheduleSave();
+      }
+    } catch (e) { alert("Не удалось прочитать файл: " + e.message); }
+  };
+  reader.readAsText(file);
+  ev.target.value = "";
+});
+document.getElementById("btn-clear").onclick = () => {
+  if (!confirm("Очистить весь холст? Это действие нельзя отменить.")) return;
+  state = { nodes: [], edges: [] }; clearSim(); select(null); render(); scheduleSave();
+};
+
+// keyboard: delete selected
+window.addEventListener("keydown", (ev) => {
+  if ((ev.key === "Delete" || ev.key === "Backspace") && selected &&
+      document.activeElement.tagName !== "INPUT") {
+    if (selected.type === "node") {
+      state.edges = state.edges.filter(e => e.from !== selected.id && e.to !== selected.id);
+      state.nodes = state.nodes.filter(x => x.id !== selected.id);
+    } else {
+      state.edges = state.edges.filter(x => x.id !== selected.id);
+    }
+    clearSim(); select(null); render(); scheduleSave();
+  }
+});
+
+// ============================================================
+//  Boot
+// ============================================================
+(function boot() {
+  try {
+    const t = localStorage.getItem("noize.theme");
+    if (t) document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+  if (!load()) { seed(); }
+  buildPalette();
+  applyView();
+  render();
+  renderInspector();
+  if (!state.__fitted) { setTimeout(fitView, 30); }
+})();
+</script>
